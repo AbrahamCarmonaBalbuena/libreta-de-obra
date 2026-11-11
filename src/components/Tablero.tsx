@@ -1,21 +1,31 @@
 interface TableroProps {
+  nombreObra: string;  
   presupuesto: number;
   gastado: number;
   historial: any[];
   alRegistrarClick: () => void;
 }
 
-export default function Tablero({ presupuesto, gastado, historial, alRegistrarClick }: TableroProps) {
+export default function Tablero({ nombreObra, presupuesto, gastado, historial, alRegistrarClick }: TableroProps) {
   const restante = presupuesto - gastado;
   const porcentajeGastado = presupuesto > 0 ? (gastado / presupuesto) * 100 : 0;
 
   const formatearDinero = (cantidad: number) => {
     return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 }).format(cantidad);
   };
+  const enviarWhatsApp = () => {
+    const texto = `*Reporte de Obra: ${nombreObra}*%0A%0A` +
+                  `💰 Presupuesto: ${formatearDinero(presupuesto)}%0A` +
+                  `💸 Gastado: ${formatearDinero(gastado)}%0A` +
+                  `✅ Restante: ${formatearDinero(restante)}%0A%0A` +
+                  `_Enviado desde Libreta de Obra_`;
+    // Abre WhatsApp con el mensaje precargado
+    window.open(`https://wa.me/?text=${texto}`, '_blank');
+  };
 
   return (
     <>
-      <h2>Casa Juan Pérez</h2>
+      <h2>{nombreObra}</h2>
       
       {/* Barra de progreso */}
       <div style={{ width: '100%', backgroundColor: '#333333', height: '20px', borderRadius: '10px', marginBottom: '20px' }}>
@@ -46,6 +56,13 @@ export default function Tablero({ presupuesto, gastado, historial, alRegistrarCl
         style={{ width: '100%', padding: '15px', fontSize: '18px', backgroundColor: '#2196f3', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', marginBottom: '30px' }}
       >
         Registrar gasto
+      </button>
+
+      <button 
+        onClick={enviarWhatsApp}
+        style={{ width: '100%', padding: '15px', fontSize: '18px', backgroundColor: '#25D366', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', marginBottom: '30px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px' }}
+      >
+        <span>💬</span> Enviar reporte por WhatsApp
       </button>
 
       {/* Sección de Historial */}
