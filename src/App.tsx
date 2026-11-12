@@ -1,15 +1,20 @@
 // src/App.tsx
 import { useState, useEffect } from 'react';
+import type { Session } from '@supabase/supabase-js';
 import Tablero from './components/Tablero';
 import RegistrarGasto from './components/RegistrarGasto';
 import CrearObra from './components/CrearObra';
+import Login from './components/Login';
 import { supabase } from './supabase';
-
 
 document.body.style.backgroundColor = '#121212';
 
 function App() {
-  // Estados
+  // --- 1. Estados de Autenticación ---
+  const [session, setSession] = useState<Session | null>(null);
+  const [cargandoAuth, setCargandoAuth] = useState(true);
+
+  // --- 2. Estados de la Obra ---
   const [nombreObra, setNombreObra] = useState(() => localStorage.getItem('nombreObra') || '');
   const [presupuesto, setPresupuesto] = useState(() => Number(localStorage.getItem('presupuesto')) || 0);
   const [historialGastos, setHistorialGastos] = useState<any[]>(() => {
@@ -19,51 +24,66 @@ function App() {
   
   const [pantallaActual, setPantallaActual] = useState(nombreObra ? 'tablero' : 'crear');
 
-  // Efectos para guardar en LocalStorage
+  // --- 3. Efecto para escuchar la sesión de Supabase ---
   useEffect(() => {
-    // 1. Guardamos en el teléfono por si se va el internet (Modo Offline)
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      setCargandoAuth(false);
+    });
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_evento, nuevaSesion) => {
+      setSession(nuevaSesion);
+    });
+
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  // --- 4. Efecto para guardar SOLO en el teléfono (LocalStorage) ---
+  useEffect(() => {
     localStorage.setItem('nombreObra', nombreObra);
     localStorage.setItem('presupuesto', presupuesto.toString());
     localStorage.setItem('historial', JSON.stringify(historialGastos));
+  }, [nombreObra, presupuesto, historialGastos]);
 
-    // 2. Buscamos los datos reales en Supabase al abrir la app
+  // --- 5. Efecto para cargar de Supabase (solo si hay sesión y obra) ---
+  useEffect(() => {
+    if (!nombreObra || !session) return;
+
+    let cancelado = false;
     const cargarDatosNube = async () => {
+      // Filtramos por el nombre de la obra para no mezclar proyectos
       const { data, error } = await supabase
         .from('gastos')
         .select('*')
-        .order('created_at', { ascending: false }); // Traer los más recientes primero
+        .eq('nombre_obra', nombreObra) 
+        .order('created_at', { ascending: false });
+
+      if (cancelado) return;
 
       if (data && !error) {
-        // Formateamos los datos de la base de datos al formato que usa nuestra app
-        const gastosFormateados = data.map((gastoDb) => ({
+        setHistorialGastos(data.map((gastoDb) => ({
           id: gastoDb.id,
           monto: gastoDb.monto_gasto,
           categoria: gastoDb.categoria,
           fecha: new Date(gastoDb.created_at).toLocaleDateString('es-MX'),
           foto: gastoDb.foto_base64
-        }));
-        setHistorialGastos(gastosFormateados);
-      } else {
+        })));
+      } else if (error) {
         console.error("Error al cargar de Supabase:", error);
       }
     };
 
-    // Solo cargamos si ya hay una obra creada
-    if (nombreObra) {
-      cargarDatosNube();
-    }
-  }, [nombreObra, presupuesto, historialGastos]); 
-  
+    cargarDatosNube();
+    return () => { cancelado = true; };
+  }, [nombreObra, session]); 
+
   const totalGastado = historialGastos.reduce((suma, gasto) => suma + gasto.monto, 0);
 
-  // Funciones
-
-
-
+  // --- 6. Funciones de la app ---
   const crearNuevaObra = (nombre: string, monto: number) => {
     setNombreObra(nombre);
     setPresupuesto(monto);
-    setHistorialGastos([]); // Empezamos con el historial vacío
+    setHistorialGastos([]); 
     setPantallaActual('tablero');
   };
 
@@ -76,11 +96,11 @@ function App() {
       foto: foto
     };
 
-    // 1. Guardamos en la pantalla del teléfono inmediatamente
+    // Guardamos en la pantalla inmediatamente
     setHistorialGastos([nuevoGasto, ...historialGastos]); 
     setPantallaActual('tablero');
 
-    // 2. Enviamos a la base de datos en la nube (en segundo plano)
+    // Enviamos a Supabase
     const { error } = await supabase.from('gastos').insert([
       {
         nombre_obra: nombreObra,
@@ -88,19 +108,18 @@ function App() {
         monto_gasto: monto,
         categoria: categoria,
         foto_base64: foto
+        // user_id se llena solo gracias al default auth.uid() en Supabase
       }
     ]);
 
     if (error) {
       console.error("Error al guardar en la nube:", error);
       alert("Hubo un error al guardar en la nube.");
-    } else {
-      console.log("¡Gasto guardado exitosamente en Supabase!");
     }
   };
 
   const cerrarObra = () => {
-    if(window.confirm("¿Seguro que quieres cerrar esta obra? Se borrarán los datos actuales.")) {
+    if(window.confirm("¿Seguro que quieres cerrar esta obra? Se borrarán los datos actuales de este teléfono.")) {
       setNombreObra('');
       setPresupuesto(0);
       setHistorialGastos([]);
@@ -109,6 +128,39 @@ function App() {
     }
   };
 
+  const cerrarSesion = async () => {
+    if(window.confirm("¿Seguro que quieres cerrar sesión?")) {
+      await supabase.auth.signOut();
+      // Limpiamos el estado y el teléfono al salir
+      setNombreObra('');
+      setPresupuesto(0);
+      setHistorialGastos([]);
+      setPantallaActual('crear');
+      localStorage.clear();
+    }
+  };
+
+  // --- 7. Renderizado ---
+
+  // Mientras Supabase verifica si hay sesión, mostramos un mensaje
+  if (cargandoAuth) {
+    return (
+      <div style={{ color: 'white', textAlign: 'center', paddingTop: '50vh', fontFamily: 'sans-serif' }}>
+        Cargando...
+      </div>
+    );
+  }
+
+  // Si no hay sesión, mostramos la pantalla de Login
+  if (!session) {
+    return (
+      <div style={{ padding: '20px', fontFamily: 'sans-serif', maxWidth: '400px', margin: '0 auto', backgroundColor: '#121212', color: 'white', minHeight: '100dvh', boxSizing: 'border-box' }}>
+        <Login />
+      </div>
+    );
+  }
+
+  // Si hay sesión, mostramos la app normal
   return (
     <div style={{ padding: '20px', fontFamily: 'sans-serif', maxWidth: '400px', margin: '0 auto', backgroundColor: '#121212', color: 'white', minHeight: '100dvh', width: '100%', boxSizing: 'border-box' }}>
       
@@ -119,7 +171,12 @@ function App() {
       {pantallaActual === 'tablero' && (
         <>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-            <button onClick={cerrarObra} style={{ background: 'none', border: 'none', color: '#f44336', fontSize: '12px', cursor: 'pointer' }}>Cerrar Obra</button>
+            <button onClick={cerrarObra} style={{ background: 'none', border: 'none', color: '#f44336', fontSize: '12px', cursor: 'pointer' }}>
+              Cerrar Obra
+            </button>
+            <button onClick={cerrarSesion} style={{ background: 'none', border: 'none', color: '#aaaaaa', fontSize: '12px', cursor: 'pointer' }}>
+              Cerrar Sesión
+            </button>
           </div>
           <Tablero 
             nombreObra={nombreObra}

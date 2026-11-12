@@ -24,7 +24,7 @@ export default function RegistrarGasto({ alVolver, alGuardar }: RegistrarGastoPr
       img.onload = () => {
         // Creamos un lienzo (canvas) para redibujar la imagen más pequeña
         const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 800; // Ancho máximo en píxeles
+        const MAX_WIDTH = 600; // Ancho máximo en píxeles
         const scale = MAX_WIDTH / img.width;
         
         canvas.width = MAX_WIDTH;
@@ -33,8 +33,8 @@ export default function RegistrarGasto({ alVolver, alGuardar }: RegistrarGastoPr
         const ctx = canvas.getContext('2d');
         if (ctx) {
           ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          // Convertimos la imagen a un texto comprimido (JPEG al 70% de calidad)
-          const fotoComprimida = canvas.toDataURL('image/jpeg', 0.7);
+          // Convertimos la imagen a un texto comprimido (JPEG al 40% de calidad)
+          const fotoComprimida = canvas.toDataURL('image/jpeg', 0.4);
           setFoto(fotoComprimida);
         }
       };
